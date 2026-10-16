@@ -2,7 +2,7 @@ const crypto = require("crypto");
 
 // Événements autorisés : tout le reste est refusé (évite qu'un tiers
 // envoie n'importe quoi à ton pixel via cette fonction publique).
-const ALLOWED_EVENTS = new Set(["PageView", "ViewContent", "InitiateCheckout"]);
+const ALLOWED_EVENTS = new Set(["PageView", "ViewContent", "AddToCart", "InitiateCheckout"]);
 const ALLOWED_CUSTOM = ["content_name", "content_ids", "content_type", "value", "currency"];
 
 const sha256 = (v) =>
@@ -26,6 +26,9 @@ exports.handler = async (event) => {
   if (!ALLOWED_EVENTS.has(eventName) || !eventId) {
     return { statusCode: 400, body: "Invalid event" };
   }
+
+  // Une ligne par appel : permet de vérifier dans les logs Netlify qu'un événement n'arrive qu'une fois.
+  console.log("meta-event", eventName, eventId);
 
   const headers = event.headers || {};
   const ip =
@@ -59,6 +62,10 @@ exports.handler = async (event) => {
   if (Object.keys(custom).length) serverEvent.custom_data = custom;
 
   const payload = { data: [serverEvent], access_token: process.env.META_CAPI_TOKEN };
+  // Optionnel : renseigne META_TEST_EVENT_CODE sur Netlify pendant les tests, puis supprime-le.
+  if (process.env.META_TEST_EVENT_CODE) {
+    payload.test_event_code = process.env.META_TEST_EVENT_CODE;
+  }
 
   const url =
     "https://graph.facebook.com/" +

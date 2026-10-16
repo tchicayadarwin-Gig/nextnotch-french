@@ -128,15 +128,14 @@
 (function () {
   var PIXEL_ID = "1428588689201157";
   var ENDPOINT = "/.netlify/functions/meta-event";
-  // Événement envoyé au clic sur un bouton d'achat. Si Chariow envoie déjà
-  // "InitiateCheckout" sur sa page de paiement, remplace par "AddToCart".
-  var CTA_EVENT = "InitiateCheckout";
+  // Événement envoyé au clic sur un bouton d'achat. Chariow envoie déjà
+  // "InitiateCheckout" sur sa page de paiement : on utilise donc "AddToCart"
+  // ici pour ne pas compter deux fois la même étape.
+  var CTA_EVENT = "AddToCart";
   var CONTENT = {
     content_name: "Next Notch",
     content_ids: ["next-notch-methode-fr"],
-    content_type: "product",
-    value: 5500,
-    currency: "XOF"
+    content_type: "product"
   };
 
   function uuid() {
@@ -171,6 +170,17 @@
 
   var xid = getExternalId();
 
+  // On crée _fbp / _fbc AVANT le pixel : fbevents.js les réutilise. Navigateur et
+  // serveur partagent ainsi les mêmes identifiants, sans attente côté serveur.
+  function setCookie(n, v) {
+    document.cookie = n + "=" + encodeURIComponent(v) + "; max-age=7776000; path=/; SameSite=Lax";
+  }
+  if (!getCookie("_fbp")) {
+    setCookie("_fbp", "fb.1." + Date.now() + "." + Math.floor(Math.random() * 1e10));
+  }
+  var _clid = getFbclid();
+  if (_clid && !getCookie("_fbc")) setCookie("_fbc", "fb.1." + Date.now() + "." + _clid);
+
   !function(f,b,e,v,n,t,s)
   {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
   n.callMethod.apply(n,arguments):n.queue.push(arguments)};
@@ -181,13 +191,8 @@
   'https://connect.facebook.net/en_US/fbevents.js');
   fbq("init", PIXEL_ID, xid ? { external_id: xid } : {});
 
-  // Envoi serveur. Au chargement, on attend (max ~1,5 s) que le cookie _fbp
-  // existe pour que Meta puisse relier l'événement serveur au navigateur.
-  function sendServer(name, id, custom, wait, attempt) {
-    attempt = attempt || 0;
-    if (wait && !getCookie("_fbp") && attempt < 6) {
-      return setTimeout(function () { sendServer(name, id, custom, wait, attempt + 1); }, 250);
-    }
+  // Envoi serveur immédiat (rien n'est retardé, donc rien n'est perdu si le visiteur part vite).
+  function sendServer(name, id, custom) {
     try {
       fetch(ENDPOINT, {
         method: "POST",
@@ -207,10 +212,10 @@
   }
 
   // Un seul point d'envoi : même nom + même event_id côté pixel et côté serveur.
-  function track(name, custom, urgent) {
+  function track(name, custom) {
     var id = uuid();
     fbq("track", name, custom || {}, { eventID: id });
-    sendServer(name, id, custom, !urgent);
+    sendServer(name, id, custom);
   }
 
   track("PageView");
@@ -227,7 +232,7 @@
     }
     if (Date.now() - lastClick < 3000) return; // évite les doubles clics
     lastClick = Date.now();
-    track(CTA_EVENT, CONTENT, true);
+    track(CTA_EVENT, CONTENT);
   }, true);
 })();
 </script>
